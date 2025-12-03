@@ -1,4 +1,4 @@
-module whatsapp-test-bridge-dev
+module whatsapp-server-test
 
 go 1.24.9
 

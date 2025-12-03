@@ -20,6 +20,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/joho/godotenv"
 	"gopkg.in/gomail.v2"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1161,11 +1162,11 @@ func main() {
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
 	// TODO: remove for prod
-	// // Load environment variables from .env file
-	// err := godotenv.Load()
-	// if err != nil {
-	// 	log.Fatal("Error loading .env file")
-	// }
+	// Load environment variables from .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 
 	// Create the database connection string
 	connectionString := createPostgresConnectionString()

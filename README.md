@@ -8,8 +8,8 @@
 
 ## High-level Diagram
 
-![high_level_diagram](architecture_diagram.png)
+![high_level_diagram](images/architecture_diagram.png)
 
 ## Low-level/Services Diagram
 
-![low_level_diagram](services_diagram.png)
+![low_level_diagram](images/services_diagram.png)

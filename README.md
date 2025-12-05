@@ -1,8 +1,6 @@
-# To-Dos
+# Useful Links
 
-- Look at overall code (some things are not necessary)
-- Send /api/message response at end of step function
-- Create agent
+-   JIRA: https://app.clickup.com/90152069951/v/b/2kyqputz-515
 
 # Architecture
 

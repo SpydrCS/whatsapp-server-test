@@ -207,6 +207,12 @@ func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 	return duration, waveform, nil
 }
 
+func downloadS3Object(ctx context.Context, bucketName string, objectKey string, fileName string) error {
+	// TODO: Implement S3 object download
+	// https://docs.aws.amazon.com/code-library/latest/ug/go_2_s3_code_examples.html#:r5d:-trigger
+	return nil
+}
+
 // Function to send a WhatsApp message
 func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
 	if !client.IsConnected() {
@@ -238,6 +244,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 
 	// Check if we have media to send
 	if mediaPath != "" {
+		// TODO: read from s3 instead
 		// Read media file
 		mediaData, err := os.ReadFile(mediaPath)
 		if err != nil {
@@ -452,11 +459,6 @@ type MessageStore struct {
 
 // Initialize message store
 func NewMessageStore(dbConnectionString string) (*MessageStore, error) {
-	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("store", 0755); err != nil {
-		return nil, fmt.Errorf("failed to create store directory: %v", err)
-	}
-
 	// Open SQLite database for messages
 	db, err := sql.Open("pgx", dbConnectionString)
 	if err != nil {
@@ -501,7 +503,7 @@ func NewMessageStore(dbConnectionString string) (*MessageStore, error) {
 func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
 	// First, check if chat already exists in database with a name
 	var existingName string
-	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
+	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = $1", chatJID).Scan(&existingName)
 	if err == nil && existingName != "" {
 		// Chat exists with a name, use that
 		logger.Infof("Using existing chat name for %s: %s", chatJID, existingName)
@@ -597,26 +599,18 @@ func extractTextContent(msg *waProto.Message) string {
 	return ""
 }
 
-func uploadToS3(ctx context.Context, bucketName string, objectKey string, mediaData []byte) error {
-	// Uses env vars
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Printf("Couldn't open file to upload. Here's why: %v\n", err)
-		return err
-	}
-
-	s3Client := s3.NewFromConfig(cfg)
+func uploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, objectKey string, mediaData []byte) error {
+	s3Client := s3.NewFromConfig(awsConfig)
 
 	reader := bytes.NewReader(mediaData)
 
-	var output *s3.ListObjectsV2Output
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucketName),
 	}
 	
 	objectPaginator := s3.NewListObjectsV2Paginator(s3Client, input)
 	for objectPaginator.HasMorePages() {
-		output, err = objectPaginator.NextPage(ctx)
+		output, err := objectPaginator.NextPage(ctx)
 		if err != nil {
 			var noBucket *s3Types.NoSuchBucket
 			if errors.As(err, &noBucket) {
@@ -635,7 +629,7 @@ func uploadToS3(ctx context.Context, bucketName string, objectKey string, mediaD
 		}
 	}
 
-	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+	_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: &bucketName,
 		Key:    &objectKey,
 		Body:   reader,
@@ -700,7 +694,7 @@ func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, str
 	var fileLength uint64
 
 	err := store.db.QueryRow(
-		"SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length FROM messages WHERE id = ? AND chat_jid = ?",
+		"SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length FROM messages WHERE id = $1 AND chat_jid = $2",
 		id, chatJID,
 	).Scan(&mediaType, &filename, &url, &mediaKey, &fileSHA256, &fileEncSHA256, &fileLength)
 
@@ -714,10 +708,6 @@ func (store *MessageStore) Close() error {
 
 // Store a chat in the database
 func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) error {
-	// _, err := store.db.Exec(
-	// 	"INSERT OR REPLACE INTO chats (jid, name, last_message_time) VALUES (?, ?, ?)",
-	// 	jid, name, lastMessageTime,
-	// )
 	_, err := store.db.Exec(
 		`INSERT INTO chats (jid, name, last_message_time)
 		VALUES ($1, $2, $3)
@@ -804,23 +794,22 @@ func (d *MediaDownloader) GetMediaType() whatsmeow.MediaType {
 }
 
 // Function to download media from a message
-func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, messageID, chatJID string) (bool, string, string, string, error) {
+func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, awsConfig aws.Config, messageID, chatJID string) (bool, string, string, string, error) {
 	// Query the database for the message
 	var mediaType, filename, url string
 	var mediaKey, fileSHA256, fileEncSHA256 []byte
 	var fileLength uint64
 	var err error
 
-	// First, check if we already have this file
-	chatDir := fmt.Sprintf("store/%s", strings.ReplaceAll(chatJID, ":", "_"))
-
 	// Get media info from the database
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.GetMediaInfo(messageID, chatJID)
 
 	if err != nil {
+		fmt.Printf("Failed to get extended media info: %v\n", err)
+
 		// Try to get basic info if extended info isn't available
 		err = messageStore.db.QueryRow(
-			"SELECT media_type, filename FROM messages WHERE id = ? AND chat_jid = ?",
+			"SELECT media_type, filename FROM messages WHERE id = $1 AND chat_jid = $2",
 			messageID, chatJID,
 		).Scan(&mediaType, &filename)
 
@@ -832,11 +821,6 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	// Check if this is a media message
 	if mediaType == "" {
 		return false, "", "", "", fmt.Errorf("not a media message")
-	}
-
-	// Create directory for the chat if it doesn't exist
-	if err := os.MkdirAll(chatDir, 0755); err != nil {
-		return false, "", "", "", fmt.Errorf("failed to create chat directory: %v", err)
 	}
 
 	// If we don't have all the media info we need, we can't download
@@ -880,12 +864,13 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
 
+	// TODO: env variable
 	bucket := "gumoreira-wpp-test-bucket"
 	objectKey := fmt.Sprintf("audio/input/%s/%s", chatJID, filename)
 	filePath := fmt.Sprintf("%s/%s", bucket, objectKey)
 
 	// Upload to S3
-	err = uploadToS3(context.Background(), bucket, objectKey, mediaData)
+	err = uploadToS3(context.Background(), awsConfig, bucket, objectKey, mediaData)
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to upload media to S3: %v", err)
 	}
@@ -932,7 +917,7 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 }
 
 // Handle regular incoming messages with media support
-func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
+func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConfig aws.Config, msg *events.Message, logger waLog.Logger) {
 	// Save message to database
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
@@ -995,7 +980,10 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 
 	// Upload to s3 if media exists
 	if mediaType != "" {
-		downloadMedia(client, messageStore, msg.Info.ID, chatJID)
+		_, _, _, _, err = downloadMedia(client, messageStore, awsConfig, msg.Info.ID, chatJID)
+		if err != nil {
+			logger.Warnf("Failed to download and upload media: %v", err)
+		}
 	}
 }
 
@@ -1204,12 +1192,21 @@ func main() {
 	}
 	defer messageStore.Close()
 
+	// Initialize AWS config
+	// Uses env vars
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Printf("Couldn't open file to upload. Here's why: %v\n", err)
+		return
+	}
+
+
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
 			// Process regular messages
-			handleMessage(client, messageStore, v, logger)
+			handleMessage(client, messageStore, cfg, v, logger)
 
 		case *events.HistorySync:
 			// Process history sync events

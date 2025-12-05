@@ -9,6 +9,7 @@ require (
 	github.com/aws/smithy-go v1.24.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20251202134806-b8b6014103aa
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df

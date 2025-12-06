@@ -10,6 +10,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+	github.com/u2takey/ffmpeg-go v0.5.0
 	go.mau.fi/whatsmeow v0.0.0-20251202134806-b8b6014103aa
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
@@ -17,6 +18,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/aws/aws-sdk-go v1.55.8 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.3 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.15 // indirect
@@ -36,14 +38,15 @@ require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/petermattis/goid v0.0.0-20250904145737-900bdf8bb490 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
+	github.com/u2takey/go-utils v0.3.1 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
 	go.mau.fi/libsignal v0.2.1 // indirect
 	go.mau.fi/util v0.9.3 // indirect

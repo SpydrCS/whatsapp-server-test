@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"strings"
+	"time"
 
-	"github.com/hajimehoshi/go-mp3"
+	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 // placeholderWaveform generates a synthetic waveform for WhatsApp voice messages
@@ -166,18 +169,55 @@ func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 	return duration, waveform, nil
 }
 
-func analyzeMP3(data []byte) (duration uint32, waveform []byte, err error) {
-	reader := bytes.NewReader(data)
-    d, err := mp3.NewDecoder(reader)
-    if err != nil {
-        return 0, nil, err
-    }
+// iOS devices require very specific audio format for voice messages.
+// It must absolutely be an ogg container with the opus compression at 16 kHz and exactly one channel.
+// For this, the most reliable solution is to use ffmpeg (in this case, the Golang version).
+// https://github.com/tulir/whatsmeow/issues/517
+func convertAudioToSendableFormat(inputMediaData []byte, objectKey string) (mediaData []byte, fileExt string, err error) {
+	tempInputFolderPath := "temp/input"
+	tempOutputFolderPath := "temp/output"
+	tempInputFilePath := fmt.Sprintf("%s/%d_%s", tempInputFolderPath, time.Now().UnixNano(), objectKey[strings.LastIndex(objectKey, "/")+1:])
+	tempOutputFilePath := fmt.Sprintf("%s/%d_%s", tempOutputFolderPath, time.Now().UnixNano(), "out.ogg")
 
-    // Duration in seconds
-    duration = uint32(float64(d.Length()) / float64(d.SampleRate()*2*2)) // 2 bytes per sample, 2 channels
-    
-	// Generate waveform
-	waveform = placeholderWaveform(duration)
+	// create temporary folder
+	err = os.MkdirAll(tempInputFolderPath, os.ModePerm)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create temp input directory: %v", err)
+	}
 
-	return duration, waveform, nil
+	// create temporary folder
+	err = os.MkdirAll(tempOutputFolderPath, os.ModePerm)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create temp output directory: %v", err)
+	}
+
+	// save inputMediaData to temp file
+	err = os.WriteFile(tempInputFilePath, inputMediaData, 0644)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to write temp file: %v", err)
+	}
+
+	// process with ffmpeg to convert to ogg opus mono 16kHz
+	err = ffmpeg.Input(tempInputFilePath).Output(tempOutputFilePath, ffmpeg.KwArgs{"ac": "1", "ar": "16000", "c:a": "libopus"}).Run()
+	if err != nil {
+		return nil, "", fmt.Errorf("FFmpeg processing failed: %v", err)
+	}
+
+	// read processed file
+	mediaData, err = os.ReadFile(tempOutputFilePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read processed file: %v", err)
+	}
+
+	// cleanup temp files
+	err = os.Remove(tempInputFilePath)
+	if err != nil {
+		fmt.Printf("Warning: failed to remove temp input file: %v\n", err)
+	}
+	err = os.Remove(tempOutputFilePath)
+	if err != nil {
+		fmt.Printf("Warning: failed to remove temp output file: %v\n", err)
+	}
+
+	return mediaData, "ogg", nil
 }

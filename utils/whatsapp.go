@@ -109,13 +109,17 @@ func sendWhatsAppMessage(client *whatsmeow.Client, s3Client *s3.Client, recipien
 	// Check if we have media to send
 	if bucketName != "" && objectKey != "" {
 		// Read media file from S3
-		mediaData, err := downloadS3Object(context.Background(), s3Client, bucketName, objectKey)
+		inputMediaData, err := downloadS3Object(context.Background(), s3Client, bucketName, objectKey)
 		if err != nil {
 			return false, fmt.Sprintf("Error reading media file: %v", err)
 		}
 
+		mediaData, fileExt, err := convertAudioToSendableFormat(inputMediaData, objectKey)
+		if err != nil {
+			return false, fmt.Sprintf("Error converting audio to sendable format: %v", err)
+		}
+
 		// Determine media type and mime type based on file extension
-		fileExt := strings.ToLower(objectKey[strings.LastIndex(objectKey, ".")+1:])
 		var mediaType whatsmeow.MediaType
 		var mimeType string
 
@@ -195,18 +199,8 @@ func sendWhatsAppMessage(client *whatsmeow.Client, s3Client *s3.Client, recipien
 				} else {
 					return false, fmt.Sprintf("Failed to analyze Ogg Opus file: %v", err)
 				}
-			} else if strings.Contains(mimeType, "mpeg") {
-				// For mp3 files, we can't extract waveform easily, just set seconds
-				// In a real implementation, you would analyze the mp3 file to get duration
-				analyzedSeconds, analyzedWaveform, err := analyzeMP3(mediaData)
-				if err == nil {
-					seconds = analyzedSeconds
-					waveform = analyzedWaveform
-				} else {
-					return false, fmt.Sprintf("Failed to analyze MP3 file: %v", err)
-				}
 			} else {
-				fmt.Printf("Not an Ogg Opus nor MP3 file: %s\n", mimeType)
+				fmt.Printf("Not an Ogg Opus file: %s\n", mimeType)
 			}
 
 			msg.AudioMessage = &waProto.AudioMessage{

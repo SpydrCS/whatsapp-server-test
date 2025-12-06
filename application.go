@@ -21,8 +21,6 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-
-
 func main() {
 	// Set up logger
 	logger := waLog.Stdout("Client", "INFO", true)
@@ -40,7 +38,7 @@ func main() {
 		logger.Errorf("Failed to initialize database: %v", err)
 		return
 	}
-	
+
 	// Get device store - This contains session information
 	deviceStore, err := utils.InitDeviceStore(container, logger)
 	if err != nil {
@@ -71,7 +69,6 @@ func main() {
 		return
 	}
 	s3Client := s3.NewFromConfig(cfg)
-
 
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {
@@ -108,11 +105,11 @@ func main() {
 
 	fmt.Println("\n✓ Connected to WhatsApp!")
 
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "5000"
-    }
-    
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "5000"
+	}
+
 	utils.StartRESTServer(client, port, s3Client)
 
 	// Create a channel to keep the main goroutine alive

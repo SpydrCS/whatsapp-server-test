@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -148,8 +149,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
 
-	// TODO: env variable
-	bucket := "gumoreira-wpp-test-bucket"
+	bucket := os.Getenv("AWS_S3_BUCKET_NAME")
 	objectKey := fmt.Sprintf("audio/input/%s/%s", chatJID, filename)
 	filePath := fmt.Sprintf("%s/%s", bucket, objectKey)
 

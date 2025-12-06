@@ -27,7 +27,6 @@ func main() {
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
 
-	// TODO: remove for prod
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {

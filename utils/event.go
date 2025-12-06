@@ -2,11 +2,11 @@ package utils
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -154,33 +154,39 @@ func HandleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 
 // Handle regular incoming messages with media support
 func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConfig aws.Config, msg *events.Message, logger waLog.Logger) {
-	// Save message to database
+	messageID := msg.Info.ID
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
-
+	
+	// Extract text content
+	content, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMessageContent(msg.Message)
+	
+	// SKip if no text content and mediaType is not "audio"
+	if content == "" && mediaType != "audio" {
+		logger.Infof("Ignoring non-audio media type: %s", mediaType)
+		return
+	}
+	
+	// Skip if there's no content and no media
+	if content == "" && mediaType == "" {
+		logger.Infof("No text or media content found in message from %s", chatJID)
+		return
+	}
+	
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
 	name := getChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
 
-	// Update chat in database with the message timestamp (keeps last message time updated)
+	// Update "chat" table with latest message timestamp
 	err := messageStore.storeChat(chatJID, name, msg.Info.Timestamp)
 	if err != nil {
 		logger.Warnf("Failed to store chat: %v", err)
-	}
-
-	// Extract text content
-	content := extractTextContent(msg.Message)
-
-	// Extract media info
-	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message)
-
-	// Skip if there's no content and no media
-	if content == "" && mediaType == "" {
-		return
+	} else {
+		logger.Infof("Updated chat %s with latest timestamp %s", chatJID, msg.Info.Timestamp.Format("2006-01-02 15:04:05"))
 	}
 
 	// Store message in database
 	err = messageStore.storeMessage(
-		msg.Info.ID,
+		messageID,
 		chatJID,
 		sender,
 		content,
@@ -198,43 +204,19 @@ func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	if err != nil {
 		logger.Warnf("Failed to store message: %v", err)
 		return
+	} else {
+		logger.Infof("Stored message %s from %s in chat %s", messageID, sender, chatJID)
+	}
+	
+	// Upload message to S3
+	filePath, err := uploadMessageToS3(client, awsConfig, os.Getenv("AWS_S3_BUCKET_NAME"), content, messageID, chatJID, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength)
+	if err != nil {
+		logger.Warnf("Failed to upload message to S3: %v", err)
+		return
+	} else {
+		logger.Infof("Uploaded message %s to S3 %s", messageID, filePath)
 	}
 
 	// Log message reception
-	timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
-	direction := "←"
-	if msg.Info.IsFromMe {
-		direction = "→"
-	}
-
-	// Log based on message type
-	if mediaType != "" {
-		fmt.Printf("[%s] %s %s: [%s: %s] %s\n", timestamp, direction, sender, mediaType, filename, content)
-	} else if content != "" {
-		fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
-	}
-
-	// Upload to s3 if media exists
-	if mediaType != "" {
-		_, _, _, _, err = downloadMedia(client, messageStore, awsConfig, msg.Info.ID, chatJID)
-		if err != nil {
-			logger.Warnf("Failed to download and upload media: %v", err)
-		}
-	}
-}
-// Extract text content from a message
-func extractTextContent(msg *waProto.Message) string {
-	if msg == nil {
-		return ""
-	}
-
-	// Try to get text content
-	if text := msg.GetConversation(); text != "" {
-		return text
-	} else if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
-		return extendedText.GetText()
-	}
-
-	// For now, we're ignoring non-text messages
-	return ""
+	logMessageReception(msg, sender, mediaType, filename, content)
 }

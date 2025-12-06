@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"go.mau.fi/whatsmeow"
 )
 
 func downloadS3Object(ctx context.Context, bucketName string, objectKey string, fileName string) error {
@@ -75,4 +76,36 @@ func uploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, ob
 	}
 
 	return err
+}
+
+// Handle S3 upload for a WhatsApp message (text or media).
+// If both content and mediaType are provided, media upload takes precedence
+func uploadMessageToS3(client *whatsmeow.Client, awsConfig aws.Config, bucketName string, content string, messageID string, chatJID string, mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) (filePath string, err error) {
+	// initialize variables
+	var mediaData []byte
+
+	if content == "" && mediaType == "" {
+		return "", fmt.Errorf("no content or media to upload for message %s", messageID)
+	}
+
+	if content != "" {
+		mediaData = []byte(content)
+	}
+	
+	if mediaType != "" {
+		mediaData, err = downloadWhatsAppMedia(client, messageID, chatJID, mediaType, url, mediaKey, fileSHA256, fileEncSHA256, fileLength)
+		if err != nil {
+			return "", fmt.Errorf("failed to download media for S3 upload: %v", err)
+		}
+	} 
+
+	objectKey := fmt.Sprintf("input/%s/%s", chatJID, filename)
+
+	// upload to S3
+	err = uploadToS3(context.Background(), awsConfig, bucketName, objectKey, mediaData)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload media to S3: %v", err)
+	}
+
+	return fmt.Sprintf("%s/%s", bucketName, objectKey), nil
 }

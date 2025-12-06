@@ -245,3 +245,59 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 
 	return true, fmt.Sprintf("Message sent to %s", recipient)
 }
+
+// Download WhatsApp media from a message
+func downloadWhatsAppMedia(client *whatsmeow.Client, messageID string, chatJID string, mediaType string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) (mediaData []byte, err error) {
+	// Check if this is a media message
+	if mediaType == "" {
+		return nil, fmt.Errorf("not a media message")
+	}
+
+	// Check if media type is audio
+	if mediaType != "audio" {
+		return nil, fmt.Errorf("unsupported media type: %s", mediaType)
+	}
+
+	// If we don't have all the media info we need, we can't download
+	if url == "" || len(mediaKey) == 0 || len(fileSHA256) == 0 || len(fileEncSHA256) == 0 || fileLength == 0 {
+		return nil, fmt.Errorf("incomplete media information for download")
+	}
+
+	fmt.Printf("Attempting to download media for message %s in chat %s...\n", messageID, chatJID)
+
+	// Extract direct path from URL
+	directPath := extractDirectPathFromURL(url)
+
+	// Create a downloader that implements DownloadableMessage
+	var waMediaType whatsmeow.MediaType
+	switch mediaType {
+	case "image":
+		waMediaType = whatsmeow.MediaImage
+	case "video":
+		waMediaType = whatsmeow.MediaVideo
+	case "audio":
+		waMediaType = whatsmeow.MediaAudio
+	case "document":
+		waMediaType = whatsmeow.MediaDocument
+	default:
+		return nil, fmt.Errorf("unsupported media type: %s", mediaType)
+	}
+
+	downloader := &MediaDownloader{
+		URL:           url,
+		DirectPath:    directPath,
+		MediaKey:      mediaKey,
+		FileLength:    fileLength,
+		FileSHA256:    fileSHA256,
+		FileEncSHA256: fileEncSHA256,
+		MediaType:     waMediaType,
+	}
+
+	// Download the media using whatsmeow client
+	mediaData, err = client.Download(context.Background(), downloader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download media: %v", err)
+	}
+
+	return mediaData, nil
+}

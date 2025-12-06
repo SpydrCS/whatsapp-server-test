@@ -1,15 +1,13 @@
 package utils
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // Extract direct path from a WhatsApp media URL
@@ -78,91 +76,6 @@ func (d *MediaDownloader) GetMediaType() whatsmeow.MediaType {
 	return d.MediaType
 }
 
-// Function to download media from a message
-func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, awsConfig aws.Config, messageID, chatJID string) (bool, string, string, string, error) {
-	// Query the database for the message
-	var mediaType, filename, url string
-	var mediaKey, fileSHA256, fileEncSHA256 []byte
-	var fileLength uint64
-	var err error
-
-	// Get media info from the database
-	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.getMediaInfo(messageID, chatJID)
-
-	if err != nil {
-		fmt.Printf("Failed to get extended media info: %v\n", err)
-
-		// Try to get basic info if extended info isn't available
-		err = messageStore.Db.QueryRow(
-			"SELECT media_type, filename FROM messages WHERE id = $1 AND chat_jid = $2",
-			messageID, chatJID,
-		).Scan(&mediaType, &filename)
-
-		if err != nil {
-			return false, "", "", "", fmt.Errorf("failed to find message: %v", err)
-		}
-	}
-
-	// Check if this is a media message
-	if mediaType == "" {
-		return false, "", "", "", fmt.Errorf("not a media message")
-	}
-
-	// If we don't have all the media info we need, we can't download
-	if url == "" || len(mediaKey) == 0 || len(fileSHA256) == 0 || len(fileEncSHA256) == 0 || fileLength == 0 {
-		return false, "", "", "", fmt.Errorf("incomplete media information for download")
-	}
-
-	fmt.Printf("Attempting to download media for message %s in chat %s...\n", messageID, chatJID)
-
-	// Extract direct path from URL
-	directPath := extractDirectPathFromURL(url)
-
-	// Create a downloader that implements DownloadableMessage
-	var waMediaType whatsmeow.MediaType
-	switch mediaType {
-	case "image":
-		waMediaType = whatsmeow.MediaImage
-	case "video":
-		waMediaType = whatsmeow.MediaVideo
-	case "audio":
-		waMediaType = whatsmeow.MediaAudio
-	case "document":
-		waMediaType = whatsmeow.MediaDocument
-	default:
-		return false, "", "", "", fmt.Errorf("unsupported media type: %s", mediaType)
-	}
-
-	downloader := &MediaDownloader{
-		URL:           url,
-		DirectPath:    directPath,
-		MediaKey:      mediaKey,
-		FileLength:    fileLength,
-		FileSHA256:    fileSHA256,
-		FileEncSHA256: fileEncSHA256,
-		MediaType:     waMediaType,
-	}
-
-	// Download the media using whatsmeow client
-	mediaData, err := client.Download(context.Background(), downloader)
-	if err != nil {
-		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
-	}
-
-	bucket := os.Getenv("AWS_S3_BUCKET_NAME")
-	objectKey := fmt.Sprintf("audio/input/%s/%s", chatJID, filename)
-	filePath := fmt.Sprintf("%s/%s", bucket, objectKey)
-
-	// Upload to S3
-	err = uploadToS3(context.Background(), awsConfig, bucket, objectKey, mediaData)
-	if err != nil {
-		return false, "", "", "", fmt.Errorf("failed to upload media to S3: %v", err)
-	}
-
-	fmt.Printf("Successfully downloaded %s media to %s (%d bytes)\n", mediaType, filePath, len(mediaData))
-	return true, mediaType, filename, filePath, nil
-}
-
 // Extract media info from a message
 func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
 	if msg == nil {
@@ -198,4 +111,53 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 	}
 
 	return "", "", "", nil, nil, nil, 0
+}
+
+// Extract text content from a message
+func extractTextContent(msg *waProto.Message) (content string) {
+	if msg == nil {
+		return ""
+	}
+
+	// Try to get text content
+	if text := msg.GetConversation(); text != "" {
+		return text
+	} else if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
+		return extendedText.GetText()
+	}
+
+	// For now, we're ignoring non-text messages
+	return ""
+}
+
+func extractMessageContent(msg *waProto.Message) (content string, mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) {
+	// Extract text content
+	content = extractTextContent(msg)
+
+	// Extract media info
+	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength = extractMediaInfo(msg)
+
+	// If filename is empty, generate a default one
+	if filename == "" && content != "" {
+		filename = "text_" + time.Now().Format("20060102_150405") + ".txt"
+	}
+
+	return content, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength
+}
+
+// Log message reception details
+func logMessageReception(msg *events.Message, sender string, mediaType string, filename string, content string) {
+	// Log message reception
+	timestamp := msg.Info.Timestamp.Format("2006-01-02 15:04:05")
+	direction := "←"
+	if msg.Info.IsFromMe {
+		direction = "→"
+	}
+
+	// Log based on message type
+	if mediaType != "" {
+		fmt.Printf("[%s] %s %s: [%s: %s] %s\n", timestamp, direction, sender, mediaType, filename, content)
+	} else if content != "" {
+		fmt.Printf("[%s] %s %s: %s\n", timestamp, direction, sender, content)
+	}
 }

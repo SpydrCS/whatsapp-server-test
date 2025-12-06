@@ -33,7 +33,7 @@ func HandleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 		}
 
 		// Get appropriate chat name by passing the history sync conversation directly
-		name := GetChatName(client, messageStore, jid, chatJID, conversation, "", logger)
+		name := getChatName(client, messageStore, jid, chatJID, conversation, "", logger)
 
 		// Process messages
 		messages := conversation.Messages
@@ -51,7 +51,7 @@ func HandleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 			}
 			timestamp := time.Unix(int64(ts), 0)
 
-			messageStore.StoreChat(chatJID, name, timestamp)
+			messageStore.storeChat(chatJID, name, timestamp)
 
 			// Store messages
 			for _, msg := range messages {
@@ -117,7 +117,7 @@ func HandleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 				}
 				timestamp := time.Unix(int64(ts), 0)
 
-				err = messageStore.StoreMessage(
+				err = messageStore.storeMessage(
 					msgID,
 					chatJID,
 					sender,
@@ -159,10 +159,10 @@ func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	sender := msg.Info.Sender.User
 
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
-	name := GetChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
+	name := getChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
 
 	// Update chat in database with the message timestamp (keeps last message time updated)
-	err := messageStore.StoreChat(chatJID, name, msg.Info.Timestamp)
+	err := messageStore.storeChat(chatJID, name, msg.Info.Timestamp)
 	if err != nil {
 		logger.Warnf("Failed to store chat: %v", err)
 	}
@@ -179,7 +179,7 @@ func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	}
 
 	// Store message in database
-	err = messageStore.StoreMessage(
+	err = messageStore.storeMessage(
 		msg.Info.ID,
 		chatJID,
 		sender,

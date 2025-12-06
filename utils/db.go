@@ -1,10 +1,15 @@
 package utils
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"time"
+
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 // Database handler for storing message history
@@ -13,7 +18,7 @@ type MessageStore struct {
 }
 
 // function to create postgres database string
-func CreatePostgresConnectionString() string {
+func createPostgresConnectionString() string {
 	username := os.Getenv("RDS_USERNAME")
 	password := os.Getenv("RDS_PASSWORD")
 	host := os.Getenv("RDS_HOSTNAME")
@@ -22,8 +27,40 @@ func CreatePostgresConnectionString() string {
 	return "postgres://" + username + ":" + password + "@" + host + ":" + port + "/" + database
 }
 
+// Create the database connection string
+func InitDB() (*sqlstore.Container, error) {
+	// Create database connection for storing session data
+	dbLog := waLog.Stdout("Database", "INFO", true)
+
+	connectionString := createPostgresConnectionString()
+	container, err := sqlstore.New(context.Background(), "pgx", connectionString, dbLog)
+	if err != nil {
+		return nil, err
+	}
+
+	return container, nil
+}
+
+// Get device store - This contains session information
+func InitDeviceStore(container *sqlstore.Container, logger waLog.Logger) (*store.Device, error) {
+	deviceStore, err := container.GetFirstDevice(context.Background())
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No device exists, create one
+			deviceStore = container.NewDevice()
+			logger.Infof("Created new device")
+		} else {
+			return nil, err
+		}
+	}
+
+	return deviceStore, nil
+}
+
 // Initialize message store
-func NewMessageStore(dbConnectionString string) (*MessageStore, error) {
+func InitMessageStore() (*MessageStore, error) {
+	dbConnectionString := createPostgresConnectionString()
+
 	// Open SQLite database for messages
 	db, err := sql.Open("pgx", dbConnectionString)
 	if err != nil {
@@ -65,7 +102,7 @@ func NewMessageStore(dbConnectionString string) (*MessageStore, error) {
 }
 
 // Get media info from the database
-func (store *MessageStore) GetMediaInfo(id, chatJID string) (string, string, string, []byte, []byte, []byte, uint64, error) {
+func (store *MessageStore) getMediaInfo(id, chatJID string) (string, string, string, []byte, []byte, []byte, uint64, error) {
 	var mediaType, filename, url string
 	var mediaKey, fileSHA256, fileEncSHA256 []byte
 	var fileLength uint64
@@ -84,7 +121,7 @@ func (store *MessageStore) Close() error {
 }
 
 // Store a chat in the database
-func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time) error {
+func (store *MessageStore) storeChat(jid, name string, lastMessageTime time.Time) error {
 	_, err := store.Db.Exec(
 		`INSERT INTO chats (jid, name, last_message_time)
 		VALUES ($1, $2, $3)
@@ -98,7 +135,7 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 }
 
 // Store a message in the database
-func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
+func (store *MessageStore) storeMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	// Only store if there's actual content or media
 	if content == "" && mediaType == "" {

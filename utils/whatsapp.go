@@ -34,7 +34,7 @@ func ConnectToWhatsApp(client *whatsmeow.Client, logger waLog.Logger) bool {
 				// send QR code via email
 				qrBuf, err := qrcode.Encode(evt.Code, qrcode.Medium, 256)
 				if err != nil {
-					logger.Errorf("Failed to generate QR PNG: %v", err)
+					logger.Errorf("Failed to generate QR code PNG: %v", err)
 					continue
 				}
 
@@ -77,7 +77,7 @@ func ConnectToWhatsApp(client *whatsmeow.Client, logger waLog.Logger) bool {
 }
 
 // Function to send a WhatsApp message
-func SendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -185,7 +185,7 @@ func SendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 
 			// Try to analyze the ogg file
 			if strings.Contains(mimeType, "ogg") {
-				analyzedSeconds, analyzedWaveform, err := AnalyzeOggOpus(mediaData)
+				analyzedSeconds, analyzedWaveform, err := analyzeOggOpus(mediaData)
 				if err == nil {
 					seconds = analyzedSeconds
 					waveform = analyzedWaveform

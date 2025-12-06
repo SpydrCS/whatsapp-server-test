@@ -20,7 +20,7 @@ func downloadS3Object(ctx context.Context, bucketName string, objectKey string, 
 	return nil
 }
 
-func UploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, objectKey string, mediaData []byte) error {
+func uploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, objectKey string, mediaData []byte) error {
 	s3Client := s3.NewFromConfig(awsConfig)
 
 	reader := bytes.NewReader(mediaData)

@@ -57,8 +57,8 @@ func placeholderWaveform(duration uint32) []byte {
 	return waveform
 }
 
-// analyzeOggOpus tries to extract duration and generate a simple waveform from an Ogg Opus file
-func AnalyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
+// tries to extract duration and generate a simple waveform from an Ogg Opus file
+func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 	// Try to detect if this is a valid Ogg file by checking for the "OggS" signature
 	// at the beginning of the file
 	if len(data) < 4 || string(data[0:4]) != "OggS" {

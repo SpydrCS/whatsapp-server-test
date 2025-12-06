@@ -86,7 +86,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	var err error
 
 	// Get media info from the database
-	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.GetMediaInfo(messageID, chatJID)
+	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.getMediaInfo(messageID, chatJID)
 
 	if err != nil {
 		fmt.Printf("Failed to get extended media info: %v\n", err)
@@ -154,7 +154,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	filePath := fmt.Sprintf("%s/%s", bucket, objectKey)
 
 	// Upload to S3
-	err = UploadToS3(context.Background(), awsConfig, bucket, objectKey, mediaData)
+	err = uploadToS3(context.Background(), awsConfig, bucket, objectKey, mediaData)
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to upload media to S3: %v", err)
 	}

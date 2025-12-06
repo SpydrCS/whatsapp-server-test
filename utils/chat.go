@@ -10,8 +10,8 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-// GetChatName determines the appropriate name for a chat based on JID and other info
-func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
+// getChatName determines the appropriate name for a chat based on JID and other info
+func getChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
 	// First, check if chat already exists in database with a name
 	var existingName string
 	err := messageStore.Db.QueryRow("SELECT name FROM chats WHERE jid = $1", chatJID).Scan(&existingName)

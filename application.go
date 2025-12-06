@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
@@ -29,9 +27,6 @@ func main() {
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
 
-	// Create database connection for storing session data
-	dbLog := waLog.Stdout("Database", "INFO", true)
-
 	// TODO: remove for prod
 	// Load environment variables from .env file
 	err := godotenv.Load()
@@ -39,26 +34,18 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Create the database connection string
-	connectionString := utils.CreatePostgresConnectionString()
-	container, err := sqlstore.New(context.Background(), "pgx", connectionString, dbLog)
+	// Initialize database
+	container, err := utils.InitDB()
 	if err != nil {
-		logger.Errorf("Failed to connect to database: %v", err)
+		logger.Errorf("Failed to initialize database: %v", err)
 		return
 	}
-
 	
 	// Get device store - This contains session information
-	deviceStore, err := container.GetFirstDevice(context.Background())
+	deviceStore, err := utils.InitDeviceStore(container, logger)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			// No device exists, create one
-			deviceStore = container.NewDevice()
-			logger.Infof("Created new device")
-		} else {
-			logger.Errorf("Failed to get device: %v", err)
-			return
-		}
+		logger.Errorf("Failed to get device: %v", err)
+		return
 	}
 
 	// Create client instance
@@ -69,7 +56,7 @@ func main() {
 	}
 
 	// Initialize message store
-	messageStore, err := utils.NewMessageStore(connectionString)
+	messageStore, err := utils.InitMessageStore()
 	if err != nil {
 		logger.Errorf("Failed to initialize message store: %v", err)
 		return
@@ -80,7 +67,7 @@ func main() {
 	// Uses env vars
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Printf("Couldn't open file to upload. Here's why: %v\n", err)
+		log.Printf("Failed to initialize AWS config: %v\n", err)
 		return
 	}
 
@@ -118,7 +105,7 @@ func main() {
 		return
 	}
 
-	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
+	fmt.Println("\n✓ Connected to WhatsApp!")
 
     port := os.Getenv("PORT")
     if port == "" {

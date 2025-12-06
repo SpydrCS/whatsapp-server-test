@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
@@ -77,7 +78,7 @@ func ConnectToWhatsApp(client *whatsmeow.Client, logger waLog.Logger) bool {
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, s3Client *s3.Client, recipient string, message string, bucketName string, objectKey string) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -106,16 +107,15 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	msg := &waProto.Message{}
 
 	// Check if we have media to send
-	if mediaPath != "" {
-		// TODO: read from s3 instead
-		// Read media file
-		mediaData, err := os.ReadFile(mediaPath)
+	if bucketName != "" && objectKey != "" {
+		// Read media file from S3
+		mediaData, err := downloadS3Object(context.Background(), s3Client, bucketName, objectKey)
 		if err != nil {
 			return false, fmt.Sprintf("Error reading media file: %v", err)
 		}
 
 		// Determine media type and mime type based on file extension
-		fileExt := strings.ToLower(mediaPath[strings.LastIndex(mediaPath, ".")+1:])
+		fileExt := strings.ToLower(objectKey[strings.LastIndex(objectKey, ".")+1:])
 		var mediaType whatsmeow.MediaType
 		var mimeType string
 
@@ -139,6 +139,9 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		case "ogg":
 			mediaType = whatsmeow.MediaAudio
 			mimeType = "audio/ogg; codecs=opus"
+		case "mp3":
+			mediaType = whatsmeow.MediaAudio
+			mimeType = "audio/mpeg"
 
 		// Video types
 		case "mp4":
@@ -192,8 +195,18 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				} else {
 					return false, fmt.Sprintf("Failed to analyze Ogg Opus file: %v", err)
 				}
+			} else if strings.Contains(mimeType, "mpeg") {
+				// For mp3 files, we can't extract waveform easily, just set seconds
+				// In a real implementation, you would analyze the mp3 file to get duration
+				analyzedSeconds, analyzedWaveform, err := analyzeMP3(mediaData)
+				if err == nil {
+					seconds = analyzedSeconds
+					waveform = analyzedWaveform
+				} else {
+					return false, fmt.Sprintf("Failed to analyze MP3 file: %v", err)
+				}
 			} else {
-				fmt.Printf("Not an Ogg Opus file: %s\n", mimeType)
+				fmt.Printf("Not an Ogg Opus nor MP3 file: %s\n", mimeType)
 			}
 
 			msg.AudioMessage = &waProto.AudioMessage{
@@ -221,7 +234,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 			}
 		case whatsmeow.MediaDocument:
 			msg.DocumentMessage = &waProto.DocumentMessage{
-				Title:         proto.String(mediaPath[strings.LastIndex(mediaPath, "/")+1:]),
+				Title:         proto.String(objectKey[strings.LastIndex(objectKey, "/")+1:]),
 				Caption:       proto.String(message),
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+
+	"github.com/hajimehoshi/go-mp3"
 )
 
 // placeholderWaveform generates a synthetic waveform for WhatsApp voice messages
@@ -160,6 +162,22 @@ func analyzeOggOpus(data []byte) (duration uint32, waveform []byte, err error) {
 
 	fmt.Printf("Ogg Opus analysis: size=%d bytes, calculated duration=%d sec, waveform=%d bytes\n",
 		len(data), duration, len(waveform))
+
+	return duration, waveform, nil
+}
+
+func analyzeMP3(data []byte) (duration uint32, waveform []byte, err error) {
+	reader := bytes.NewReader(data)
+    d, err := mp3.NewDecoder(reader)
+    if err != nil {
+        return 0, nil, err
+    }
+
+    // Duration in seconds
+    duration = uint32(float64(d.Length()) / float64(d.SampleRate()*2*2)) // 2 bytes per sample, 2 channels
+    
+	// Generate waveform
+	waveform = placeholderWaveform(duration)
 
 	return duration, waveform, nil
 }

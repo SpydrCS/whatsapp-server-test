@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.mau.fi/whatsmeow"
 )
 
@@ -12,7 +13,8 @@ import (
 type SendMessageRequest struct {
 	Recipient string `json:"recipient"`
 	Message   string `json:"message"`
-	MediaPath string `json:"media_path,omitempty"`
+	BucketName string `json:"bucket_name,omitempty"`
+	ObjectKey string `json:"object_key,omitempty"`
 }
 
 // SendMessageResponse represents the response for the send message API
@@ -22,7 +24,7 @@ type SendMessageResponse struct {
 }
 
 
-func StartRESTServer(client *whatsmeow.Client, port string) {
+func StartRESTServer(client *whatsmeow.Client, port string, s3Client *s3.Client) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello World!")
 	})
@@ -35,6 +37,7 @@ func StartRESTServer(client *whatsmeow.Client, port string) {
 
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("Received request to /api/send")
 		// Only allow POST requests
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -54,16 +57,16 @@ func StartRESTServer(client *whatsmeow.Client, port string) {
 			return
 		}
 
-		if req.Message == "" && req.MediaPath == "" {
+		if req.Message == "" && (req.BucketName == "" || req.ObjectKey == "") {
 			http.Error(w, "Message or media path is required", http.StatusBadRequest)
 			return
 		}
 
-		fmt.Println("Received request to send message", req.Message, req.MediaPath)
+		fmt.Println("Received request to send message", req.Message, req.BucketName, req.ObjectKey)
 
 		// Send the message
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath)
-		fmt.Println("Message sent", success, message)
+		success, message := sendWhatsAppMessage(client, s3Client, req.Recipient, req.Message, req.BucketName, req.ObjectKey)
+		fmt.Printf("Message sent: success=%v, message=%s\n", success, message)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
 

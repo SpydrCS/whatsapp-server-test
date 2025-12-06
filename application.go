@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -69,6 +70,7 @@ func main() {
 		log.Printf("Failed to initialize AWS config: %v\n", err)
 		return
 	}
+	s3Client := s3.NewFromConfig(cfg)
 
 
 	// Setup event handling for messages and history sync
@@ -76,7 +78,7 @@ func main() {
 		switch v := evt.(type) {
 		case *events.Message:
 			// Process regular messages
-			utils.HandleMessage(client, messageStore, cfg, v, logger)
+			utils.HandleMessage(client, messageStore, s3Client, v, logger)
 
 		case *events.HistorySync:
 			// Process history sync events
@@ -111,7 +113,7 @@ func main() {
         port = "5000"
     }
     
-	utils.StartRESTServer(client, port)
+	utils.StartRESTServer(client, port, s3Client)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -153,7 +153,7 @@ func HandleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 }
 
 // Handle regular incoming messages with media support
-func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConfig aws.Config, msg *events.Message, logger waLog.Logger) {
+func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, s3Client *s3.Client, msg *events.Message, logger waLog.Logger) {
 	messageID := msg.Info.ID
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
@@ -209,7 +209,7 @@ func HandleMessage(client *whatsmeow.Client, messageStore *MessageStore, awsConf
 	}
 	
 	// Upload message to S3
-	filePath, err := uploadMessageToS3(client, awsConfig, os.Getenv("AWS_S3_BUCKET_NAME"), content, messageID, chatJID, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength)
+	filePath, err := uploadMessageToS3(client, s3Client, os.Getenv("AWS_S3_BUCKET_NAME"), content, messageID, chatJID, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength)
 	if err != nil {
 		logger.Warnf("Failed to upload message to S3: %v", err)
 		return

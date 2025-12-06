@@ -5,25 +5,46 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"go.mau.fi/whatsmeow"
 )
 
-func downloadS3Object(ctx context.Context, bucketName string, objectKey string, fileName string) error {
+func downloadS3Object(ctx context.Context, s3Client *s3.Client, bucketName string, objectKey string) (audioBytes []byte, err error) {
 	// TODO: Implement S3 object download
 	// https://docs.aws.amazon.com/code-library/latest/ug/go_2_s3_code_examples.html#:r5d:-trigger
-	return nil
+	
+	result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var noKey *types.NoSuchKey
+		if errors.As(err, &noKey) {
+			log.Printf("Can't get object %s from bucket %s. No such key exists.\n", objectKey, bucketName)
+			err = noKey
+		} else {
+			log.Printf("Couldn't get object %v:%v. Here's why: %v\n", bucketName, objectKey, err)
+		}
+		return nil, err
+	}
+	defer result.Body.Close()
+	
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		log.Printf("Couldn't read object body from %v. Here's why: %v\n", objectKey, err)
+	}
+	return body, err
 }
 
-func uploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, objectKey string, mediaData []byte) error {
-	s3Client := s3.NewFromConfig(awsConfig)
-
+func uploadToS3(ctx context.Context, s3Client *s3.Client, bucketName string, objectKey string, mediaData []byte) error {
 	reader := bytes.NewReader(mediaData)
 
 	input := &s3.ListObjectsV2Input{
@@ -80,7 +101,7 @@ func uploadToS3(ctx context.Context, awsConfig aws.Config, bucketName string, ob
 
 // Handle S3 upload for a WhatsApp message (text or media).
 // If both content and mediaType are provided, media upload takes precedence
-func uploadMessageToS3(client *whatsmeow.Client, awsConfig aws.Config, bucketName string, content string, messageID string, chatJID string, mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) (filePath string, err error) {
+func uploadMessageToS3(client *whatsmeow.Client, s3Client *s3.Client, bucketName string, content string, messageID string, chatJID string, mediaType string, filename string, url string, mediaKey []byte, fileSHA256 []byte, fileEncSHA256 []byte, fileLength uint64) (filePath string, err error) {
 	// initialize variables
 	var mediaData []byte
 
@@ -102,7 +123,7 @@ func uploadMessageToS3(client *whatsmeow.Client, awsConfig aws.Config, bucketNam
 	objectKey := fmt.Sprintf("input/%s/%s", chatJID, filename)
 
 	// upload to S3
-	err = uploadToS3(context.Background(), awsConfig, bucketName, objectKey, mediaData)
+	err = uploadToS3(context.Background(), s3Client, bucketName, objectKey, mediaData)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload media to S3: %v", err)
 	}
